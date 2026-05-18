@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ailedger-detection"
+version = "0.1.0"
+description = "AILedger Detection layer — open-source statistical primitives for bias, drift, and parity analysis over Detection Event chains"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Jake Joyner", email = "jake@ailedger.dev"},
+]
+keywords = [
+    "ailedger",
+    "ai-audit",
+    "bias-detection",
+    "disparate-impact",
+    "four-fifths-rule",
+    "ai-compliance",
+    "eu-ai-act",
+    "federal-rule-707",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Legal Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.10",
+]
+
+[project.urls]
+Homepage = "https://ailedger.dev"
+Repository = "https://github.com/jakejjoyner/ailedger"
+Charter = "https://ailedger.com/charter"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ailedger_detection"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "RUF"]
+
+[tool.mypy]
+strict = true
+python_version = "3.10"

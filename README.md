@@ -1,0 +1,122 @@
+# ailedger-detection
+
+Open-source statistical primitives for AILedger Detection Event chains.
+
+**Version:** 0.1.0 (skeleton)
+**License:** Apache 2.0 (per posture v2; customer + regulator + adversarial-reviewer auditable)
+**Python:** 3.10+
+**Author:** Jake Joyner / Joyner Ventures LLC
+**Charter:** https://ailedger.com/charter
+
+---
+
+## What this is
+
+The Apache-2.0 Detection layer of AILedger. The open-source artifact that customers, regulators, and adversarial reviewers can read, audit, and run independently against any Detection Event chain.
+
+Per the AILedger Charter v1.1 anti-theater commitments:
+- Detection thresholds are anchored to published standards (EEOC four-fifths rule = 0.8; FDIC SR 11-7 / OCC 2011-12 PSI ladder)
+- Customers TIGHTEN thresholds (toward stricter detection), never loosen
+- Per-customer detection disablement is REFUSED at the schema level
+- "Compliance mode" that bypasses detection is REFUSED at the schema level
+
+This package is the substrate that makes those commitments verifiable.
+
+## What v0.1.0 ships
+
+Three production statistical primitives:
+
+- `disparate_impact_ratio` — four-fifths-rule baseline (EEOC Uniform Guidelines 29 CFR 1607). Returns minimum cross-group positive-outcome ratio + flag.
+- `statistical_parity_difference` — absolute difference between group positive-outcome rates. Complementary to disparate impact ratio (stable when one group has very low rates).
+- `model_drift_between_versions` — Population Stability Index (PSI) across decision type distribution between two cohorts. FDIC/OCC threshold ladder.
+
+Three additional primitives stubbed for v0.2.0:
+
+- `confidence_stratified_outcome_analysis` — outcome distribution sliced by confidence bucket
+- `unresolved_flag_accumulation` — pattern detection on flags raised but never resolved
+- `subject_repeated_decision_patterns` — repeated-decision detection at subject level
+
+## Why these specific primitives
+
+Per `gt-lab/docs/compliance-architecture/ARCHITECTURE-detection-taxonomy.md` and the strategic pivot validation, the v0.1.0 set covers the three failure modes most likely to surface in adversarial review:
+
+1. **Disparate impact** is the load-bearing primitive for Federal Rule 707 admissibility in employment + credit + insurance discrimination cases. The four-fifths rule is the standard a plaintiff's expert will run.
+2. **Statistical parity** is the complementary view favored by EU AI Act Article 26 (deployer obligations) and academic fairness literature.
+3. **Model drift** is the load-bearing primitive for FDIC-regulated AI model governance and for rare-disease research integrity (was the model that produced these decisions the same as the model under review?).
+
+## Install
+
+```
+pip install ailedger-detection
+```
+
+## Usage
+
+```python
+from ailedger_detection import (
+    disparate_impact_ratio,
+    statistical_parity_difference,
+    model_drift_between_versions,
+)
+
+# events: an iterable of Detection Event records (dicts) from the
+# AILedger ledger.decision_events table.
+# Each record is expected to carry protected_class_context (JSONB).
+
+result = disparate_impact_ratio(
+    events,
+    protected_class_key="race",
+    positive_outcome_predicate=lambda e: e["output"]["decision"] == "hire",
+)
+
+print(f"Ratio: {result.ratio:.3f}")
+print(f"Flagged: {result.flagged}")
+print(f"High group: {result.high_group} ({result.high_rate:.3f})")
+print(f"Low group: {result.low_group} ({result.low_rate:.3f})")
+```
+
+## Charter posture
+
+This package's threshold defaults follow the AILedger Charter v1.1:
+
+| Primitive | Default threshold | Source | Customer can tighten? | Customer can loosen? |
+|---|---|---|---|---|
+| `disparate_impact_ratio` | 0.80 | EEOC Uniform Guidelines (29 CFR 1607) | Yes (raise toward 1.0) | **No** |
+| `statistical_parity_difference` | 0.10 | AILedger default | Yes (lower toward 0) | **No** |
+| `model_drift_between_versions` | PSI ≥ 0.25 = action | FDIC SR 11-7 / OCC 2011-12 | Yes (lower action threshold) | **No** |
+
+A consumer call site that passes a looser threshold receives a `ValueError`. The refusal is structural, not policy.
+
+## Spec linkage
+
+- Detection Event schema: `proxy/migrations/20260512_decision_events_schema.sql`
+- Param canonicalization spec: `gt-lab/docs/param-canonicalization-spec-v1.md`
+- Detection taxonomy: `gt-lab/docs/compliance-architecture/ARCHITECTURE-detection-taxonomy.md`
+- Charter: `CHARTER.md` v1.1 (Jake-authored, ratified 2026-05-17)
+
+## Testing
+
+```
+cd detection
+pip install -e ".[test]"
+pytest
+```
+
+## What this is NOT
+
+- Not a turn-key AI compliance product. The primitives are the substrate; consumers apply them against their own Detection Event streams with their own decision-domain-specific predicates.
+- Not the integrity layer. The hash chain lives in `proxy/migrations/`; this package does not verify chain integrity, only statistics over the events.
+- Not the only package. The producer-side SDK is at `sdk/` (`@ailedger/sdk` v0.1.0 TypeScript).
+
+## Repo posture (separate repo planned)
+
+Per AILedger posture v2 (`gt-lab/memory/project_ailedger_posture_v2_2026_05_12.md`), the Detection layer ships as a SEPARATE public repo from day one. v0.1.0 lives in the ailedger monorepo for development convenience; extraction to `github.com/jakejjoyner/ailedger-detection` (or canonical equivalent) is bead `hq-77p` work and gates the public-differentiation claim.
+
+The Apache 2.0 license is unchanged when the package extracts to its own repo. Issue tracking and contributions migrate at extraction time.
+
+## Authority
+
+- Spec: `gt-lab/docs/param-canonicalization-spec-v1.md`
+- Posture: `gt-lab/memory/project_ailedger_posture_v2_2026_05_12.md`
+- Charter: `CHARTER.md` v1.1
+- Competitive matrix: `gt-lab/docs/ailedger-competitive-matrix-v2.md`
