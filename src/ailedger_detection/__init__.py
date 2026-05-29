@@ -12,6 +12,11 @@ Primitives shipped in v0.1.0:
 - unresolved_flag_accumulation (stub)
 - subject_repeated_decision_patterns (stub)
 
+Primitives shipped in v0.2.x (post-v0.2.0):
+- tool_call_unauthorized_action_rate (agent-overreach / confabulation detector
+  for tool-using LLM systems; uses existing required_actions vs actions_taken
+  diff mechanism)
+
 These primitives operate on Detection Event records as produced by the AILedger
 Decision Events schema (proxy/migrations/20260512_decision_events_schema.sql)
 plus inferred-event extension (proxy/migrations/20260518_inferred_detection_events.sql).
@@ -39,6 +44,10 @@ from ailedger_detection.parity import (
     statistical_parity_difference,
 )
 from ailedger_detection.repeated_decisions import subject_repeated_decision_patterns
+from ailedger_detection.tool_calls import (
+    UnauthorizedToolCallResult,
+    tool_call_unauthorized_action_rate,
+)
 from ailedger_detection.types import (
     DetectionEvent,
     ExtractorMethod,
@@ -62,6 +71,9 @@ __all__ = [
     "statistical_parity_difference",
     "ModelDriftResult",
     "model_drift_between_versions",
+    # v0.2.x production primitives
+    "UnauthorizedToolCallResult",
+    "tool_call_unauthorized_action_rate",
     # v0.2.0 stubs (will raise NotImplementedError; designed for v0.3.0)
     "confidence_stratified_outcome_analysis",
     "unresolved_flag_accumulation",
