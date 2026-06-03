@@ -2,7 +2,7 @@
 
 Open-source statistical primitives for AILedger Detection Event chains.
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **License:** Apache 2.0 (per posture v2; customer + regulator + adversarial-reviewer auditable)
 **Python:** 3.10+
 **Author:** Jake Joyner / Joyner Ventures LLC
@@ -22,13 +22,21 @@ Per the AILedger Charter v1.1 anti-theater commitments:
 
 This package is the substrate that makes those commitments verifiable.
 
-## What v0.2.0 ships
+## What v0.3.0 ships
 
-Three production statistical primitives:
+Seven production statistical primitives:
 
 - `disparate_impact_ratio` — four-fifths-rule baseline (EEOC Uniform Guidelines 29 CFR 1607). Returns minimum cross-group positive-outcome ratio + flag.
 - `statistical_parity_difference` — absolute difference between group positive-outcome rates. Complementary to disparate impact ratio (stable when one group has very low rates).
 - `model_drift_between_versions` — Population Stability Index (PSI) across decision type distribution between two cohorts. FDIC/OCC threshold ladder.
+- `tool_call_unauthorized_action_rate` — agent-overreach / confabulation detector for tool-using LLM systems (the `actions_taken − required_actions` diff).
+- `confidence_stratified_outcome_analysis` — **(new in 0.3.0)** disparate impact computed *per confidence bucket*. Surfaces models that clear the four-fifths rule in aggregate while their high-confidence decisions concentrate adverse outcomes on a protected class.
+- `unresolved_flag_accumulation` — **(new in 0.3.0)** accumulation of unresolved required actions (`required_actions − actions_taken`) per subject/tenant. A single gap may be in flight; accumulation is the audit signal.
+- `subject_repeated_decision_patterns` — **(new in 0.3.0)** subjects accumulating repeated adverse decisions across events (the "three strikes" disparate-treatment pattern).
+
+LARP audit-spine layer **(new in 0.3.0)**:
+
+- `warrant_detection_result` — wrap any detection result as a **warranted Decision**: the result is the 1-cell, and the `Warrant` (cited standard, observed value, threshold, and the *rejected alternatives*) is the 2-cell that justifies it. The log of warranted Decisions is the auditable product. Flag suppression is refused structurally: `WarrantedDecision` re-checks that `warrant.flagged == result.flagged` at construction, so no warrant can claim "clean" over a flagged result.
 
 Typed contracts:
 
@@ -38,24 +46,22 @@ Typed contracts:
 
 TypedDict is structural, so existing callers passing untyped `dict` continue to work; the types add static-analysis + IDE assistance without runtime cost.
 
-Three additional primitives stubbed for v0.3.0:
-
-- `confidence_stratified_outcome_analysis` — outcome distribution sliced by confidence bucket
-- `unresolved_flag_accumulation` — pattern detection on flags raised but never resolved
-- `subject_repeated_decision_patterns` — repeated-decision detection at subject level
-
-Each stub raises `NotImplementedError` with a pointer to the open design questions in its module docstring.
+The three v0.2.0 stubs (`confidence_stratified_outcome_analysis`, `unresolved_flag_accumulation`, `subject_repeated_decision_patterns`) are now fully implemented and no longer raise `NotImplementedError`.
 
 ## Test coverage
 
-v0.2.0 ships:
+v0.3.0 ships:
 
-- `tests/test_disparate_impact.py` — 8 tests covering baseline / threshold / borderline / custom-tighter / single-group / no-positive-outcomes / invalid-threshold / inspectable-stats
-- `tests/test_parity.py` — 7 tests covering parity / large gap / borderline / custom-threshold / invalid-threshold / disparate-impact complement / single-group
-- `tests/test_drift.py` — 9 tests covering FDIC/OCC threshold ladder / no-drift / moderate / significant / custom-extractor / empty cohorts / invalid thresholds / new-bucket / sum-to-psi
-- `tests/test_stubs.py` — 3 tests confirming stubs raise NotImplementedError with v0.3.0 pointer
+- `tests/test_disparate_impact.py` — disparate impact: baseline / threshold / borderline / custom-tighter / single-group / no-positive-outcomes / invalid-threshold / inspectable-stats
+- `tests/test_parity.py` — statistical parity: parity / large gap / borderline / custom-threshold / invalid-threshold / disparate-impact complement / single-group
+- `tests/test_drift.py` — model drift: FDIC/OCC threshold ladder / no-drift / moderate / significant / custom-extractor / empty cohorts / invalid thresholds / new-bucket / sum-to-psi
+- `tests/test_tool_calls.py` — unauthorized tool-call rate
+- `tests/test_confidence.py` — confidence-stratified disparate impact: per-bucket flagging / aggregate-clean-but-stratified-flags / single-group buckets / boundary validation / skip semantics / custom extractor / tighten-only
+- `tests/test_unresolved_flags.py` — unresolved-action accumulation: per-group accumulation / baseline / tighten-to-one / loosening-refused / per-action+per-event detail / tenant fallback
+- `tests/test_repeated_decisions.py` — subject repeated decisions: three-strikes flagging / baseline / mixed outcomes / tighten-to-two / loosening-refused / sort order / skip semantics
+- `tests/test_warrant.py` — warranted Decisions: wrapping / ladder results / unknown-type refusal / anti-theater invariant (suppression refused at the schema level)
 
-Total: 27 tests. Run with `pytest`.
+Total: 82 tests. Run with `pytest`.
 
 ## Why these specific primitives
 
@@ -96,6 +102,39 @@ print(f"High group: {result.high_group} ({result.high_rate:.3f})")
 print(f"Low group: {result.low_group} ({result.low_rate:.3f})")
 ```
 
+### Warranted Decisions (LARP)
+
+A bare result is a 1-cell with no 2-cell — not auditable. Wrap it so it carries
+its own justification (cited standard, observed value, and the alternatives that
+were considered and rejected). The log of these warranted Decisions is the
+product a regulator audits:
+
+```python
+from ailedger_detection import disparate_impact_ratio, warrant_detection_result
+
+result = disparate_impact_ratio(
+    events,
+    protected_class_key="race",
+    positive_outcome_predicate=lambda e: e["output"]["decision"] == "hire",
+)
+
+decision = warrant_detection_result(
+    result,
+    decision_id="dec-2026-06-03-0001",
+    rejected_alternatives=(
+        "statistical_parity_difference: rejected — ratio is the Rule 707 standard here",
+    ),
+)
+
+print(decision.warrant.standard)   # EEOC Uniform Guidelines four-fifths rule (29 CFR 1607)
+print(decision.warrant.flagged)    # mirrors result.flagged — cannot be overridden
+```
+
+`warrant.flagged` is read directly off the result. There is no parameter to
+override it, and `WarrantedDecision` re-checks the invariant at construction, so
+a warrant can never claim "clean" over a flagged result — suppression is refused
+at the schema level, not by policy.
+
 ## Charter posture
 
 This package's threshold defaults follow the AILedger Charter v1.1:
@@ -105,8 +144,12 @@ This package's threshold defaults follow the AILedger Charter v1.1:
 | `disparate_impact_ratio` | 0.80 | EEOC Uniform Guidelines (29 CFR 1607) | Yes (raise toward 1.0) | **No** |
 | `statistical_parity_difference` | 0.10 | AILedger default | Yes (lower toward 0) | **No** |
 | `model_drift_between_versions` | PSI ≥ 0.25 = action | FDIC SR 11-7 / OCC 2011-12 | Yes (lower action threshold) | **No** |
+| `tool_call_unauthorized_action_rate` | 0.0 | AILedger default (tighten upstream in `required_actions`) | Yes | **No** |
+| `confidence_stratified_outcome_analysis` | 0.80 per bucket | EEOC four-fifths rule (29 CFR 1607) | Yes (raise toward 1.0) | **No** |
+| `unresolved_flag_accumulation` | 2 per group | AILedger default | Yes (lower toward 1) | **No** |
+| `subject_repeated_decision_patterns` | 3 per subject | AILedger default | Yes (lower toward 2) | **No** |
 
-A consumer call site that passes a looser threshold receives a `ValueError`. The refusal is structural, not policy.
+A consumer call site that passes a looser threshold receives a `ValueError`. The refusal is structural, not policy. For the count-based primitives (`unresolved_flag_accumulation`, `subject_repeated_decision_patterns`), "tighten" means *lowering* the count so detection fires sooner; a value above the baseline is refused.
 
 ## Spec linkage
 

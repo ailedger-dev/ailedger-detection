@@ -4,18 +4,20 @@ Event chains.
 
 Apache 2.0. See LICENSE.
 
-Primitives shipped in v0.1.0:
+Production primitives:
 - disparate_impact_ratio (four-fifths-rule baseline)
 - statistical_parity_difference
 - model_drift_between_versions
-- confidence_stratified_outcome_analysis (stub)
-- unresolved_flag_accumulation (stub)
-- subject_repeated_decision_patterns (stub)
+- tool_call_unauthorized_action_rate (agent-overreach / confabulation detector)
+- confidence_stratified_outcome_analysis (per-confidence-bucket disparate impact)
+- unresolved_flag_accumulation (accumulating unresolved required actions)
+- subject_repeated_decision_patterns (repeated adverse decisions per subject)
 
-Primitives shipped in v0.2.x (post-v0.2.0):
-- tool_call_unauthorized_action_rate (agent-overreach / confabulation detector
-  for tool-using LLM systems; uses existing required_actions vs actions_taken
-  diff mechanism)
+LARP / audit-spine layer:
+- warrant_detection_result — wrap any detection result as a warranted Decision
+  (the result is the 1-cell; the warrant + rejected alternatives is the 2-cell).
+  The log of warranted Decisions is the auditable product. Flag suppression is
+  refused at the schema level (Charter v1.1).
 
 These primitives operate on Detection Event records as produced by the AILedger
 Decision Events schema (proxy/migrations/20260512_decision_events_schema.sql)
@@ -30,7 +32,11 @@ Authority: gt-lab/docs/param-canonicalization-spec-v1.md +
 gt-lab/docs/compliance-architecture/ARCHITECTURE-detection-taxonomy.md.
 """
 
-from ailedger_detection.confidence import confidence_stratified_outcome_analysis
+from ailedger_detection.confidence import (
+    ConfidenceBucketStat,
+    ConfidenceStratifiedResult,
+    confidence_stratified_outcome_analysis,
+)
 from ailedger_detection.disparate_impact import (
     DisparateImpactResult,
     disparate_impact_ratio,
@@ -43,7 +49,11 @@ from ailedger_detection.parity import (
     StatisticalParityResult,
     statistical_parity_difference,
 )
-from ailedger_detection.repeated_decisions import subject_repeated_decision_patterns
+from ailedger_detection.repeated_decisions import (
+    RepeatedDecisionResult,
+    SubjectPattern,
+    subject_repeated_decision_patterns,
+)
 from ailedger_detection.tool_calls import (
     UnauthorizedToolCallResult,
     tool_call_unauthorized_action_rate,
@@ -54,29 +64,41 @@ from ailedger_detection.types import (
     InferredDetectionEvent,
     ProtectedClassCollectionMethod,
 )
-from ailedger_detection.unresolved_flags import unresolved_flag_accumulation
+from ailedger_detection.unresolved_flags import (
+    UnresolvedFlagResult,
+    unresolved_flag_accumulation,
+)
+from ailedger_detection.warrant import (
+    Warrant,
+    WarrantedDecision,
+    warrant_detection_result,
+)
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
-    # Type contracts
+    "ConfidenceBucketStat",
+    "ConfidenceStratifiedResult",
     "DetectionEvent",
-    "InferredDetectionEvent",
-    "ExtractorMethod",
-    "ProtectedClassCollectionMethod",
-    # v0.1.0 production primitives
     "DisparateImpactResult",
-    "disparate_impact_ratio",
-    "StatisticalParityResult",
-    "statistical_parity_difference",
+    "ExtractorMethod",
+    "InferredDetectionEvent",
     "ModelDriftResult",
-    "model_drift_between_versions",
-    # v0.2.x production primitives
+    "ProtectedClassCollectionMethod",
+    "RepeatedDecisionResult",
+    "StatisticalParityResult",
+    "SubjectPattern",
     "UnauthorizedToolCallResult",
-    "tool_call_unauthorized_action_rate",
-    # v0.2.0 stubs (will raise NotImplementedError; designed for v0.3.0)
-    "confidence_stratified_outcome_analysis",
-    "unresolved_flag_accumulation",
-    "subject_repeated_decision_patterns",
+    "UnresolvedFlagResult",
+    "Warrant",
+    "WarrantedDecision",
     "__version__",
+    "confidence_stratified_outcome_analysis",
+    "disparate_impact_ratio",
+    "model_drift_between_versions",
+    "statistical_parity_difference",
+    "subject_repeated_decision_patterns",
+    "tool_call_unauthorized_action_rate",
+    "unresolved_flag_accumulation",
+    "warrant_detection_result",
 ]
