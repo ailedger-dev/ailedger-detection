@@ -22,8 +22,17 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from ailedger_detection.thresholds import (
+    enforce_tighten_only,
+    get_standard,
+    rejected_thresholds_for,
+)
+from ailedger_detection.warrant import Warrant
+
 # EEOC Uniform Guidelines four-fifths-rule baseline. Customers tighten, never loosen.
 FOUR_FIFTHS_BASELINE: float = 0.8
+
+_PRIMITIVE = "disparate_impact_ratio"
 
 
 @dataclass(frozen=True)
@@ -53,6 +62,29 @@ class DisparateImpactResult:
 
     group_stats: dict[str, tuple[int, int]]
     """Per-group (positive_count, total_count) for full inspectability."""
+
+    def to_warrant(self, *, created_at: str | None = None) -> Warrant:
+        """Memorialize this result as a LARP warrant."""
+        std = get_standard(_PRIMITIVE)
+        return Warrant.build(
+            primitive=_PRIMITIVE,
+            result={
+                "flagged": self.flagged,
+                "metric": "disparate_impact_ratio",
+                "value": self.ratio,
+                "high_group": self.high_group,
+                "low_group": self.low_group,
+            },
+            evidence={
+                "high_rate": self.high_rate,
+                "low_rate": self.low_rate,
+                "group_stats": {k: list(v) for k, v in self.group_stats.items()},
+            },
+            standard=std.standard,
+            threshold=self.threshold,
+            rejected_thresholds=rejected_thresholds_for(_PRIMITIVE, self.threshold),
+            created_at=created_at,
+        )
 
 
 def disparate_impact_ratio(
@@ -88,7 +120,9 @@ def disparate_impact_ratio(
         ValueError: If the event stream contains fewer than two distinct
             protected-class groups (a single-group ratio is undefined).
         ValueError: If any group has zero total events (rate is undefined).
-        ValueError: If threshold is not in (0, 1].
+        ValueError: If threshold is out of range or LOOSENS detection below the
+            four-fifths baseline (0.8). Per Charter v1.1 the refusal is
+            structural: customers tighten (raise toward 1.0), never loosen.
 
     Example:
         >>> events = [
@@ -105,8 +139,7 @@ def disparate_impact_ratio(
         >>> result.flagged  # 0/2 < 0.8 * 1/2 → adverse impact flagged
         True
     """
-    if not 0 < threshold <= 1:
-        raise ValueError(f"threshold must be in (0, 1]; got {threshold}")
+    threshold = enforce_tighten_only(_PRIMITIVE, threshold)
 
     group_stats: dict[str, list[int]] = {}
 
