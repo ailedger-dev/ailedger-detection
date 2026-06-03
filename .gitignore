@@ -13,3 +13,11 @@ build
 .DS_Store
 .venv
 venv
+
+# runtime scaffolding — never publish (auto-checkpoint leak guard)
+.dolt/
+embeddeddolt/
+.beads/
+.claude/
+.runtime/
+CLAUDE.md
