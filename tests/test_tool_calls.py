@@ -29,7 +29,9 @@ class TestToolCallUnauthorizedActionRate:
 
     def test_all_authorized_actions_yield_rate_zero(self) -> None:
         events = [
-            _event("e1", required=["tool.play_media", "tool.pause_media"], taken=["tool.play_media"]),
+            _event(
+                "e1", required=["tool.play_media", "tool.pause_media"], taken=["tool.play_media"]
+            ),
             _event("e2", required=["tool.play_media"], taken=["tool.play_media"]),
         ]
         result = tool_call_unauthorized_action_rate(events)
@@ -141,27 +143,26 @@ class TestToolCallUnauthorizedActionRate:
         assert result.unauthorized_event_count == 1
         assert result.per_event_unauthorized == [("e1", ("tool.unlock_door",))]
 
-    def test_threshold_above_default_loosens_detection(self) -> None:
-        # Customers SHOULD NOT do this in production (per Charter), but the
-        # primitive accepts a tunable threshold for API symmetry. Validate that
-        # raising it does mathematically what's expected.
+    def test_threshold_above_default_is_refused(self) -> None:
+        # Raising the threshold would suppress unauthorized-action detection.
+        # Per Charter v1.1 this is refused structurally — there is no "tunable
+        # for symmetry" escape hatch. Customers tighten policy upstream in
+        # required_actions, never by loosening this knob.
         events = [
             _event("e1", required=["tool.play_media"], taken=["tool.play_media"]),
             _event("e2", required=["tool.play_media"], taken=["tool.unlock_door"]),
         ]
-        # rate = 0.5
         result_strict = tool_call_unauthorized_action_rate(events)  # threshold=0.0
         assert result_strict.flagged is True
 
-        result_loose = tool_call_unauthorized_action_rate(events, threshold=0.5)
-        # rate (0.5) is not > threshold (0.5); strict-greater-than semantics
-        assert result_loose.flagged is False
+        with pytest.raises(ValueError, match="LOOSENS"):
+            tool_call_unauthorized_action_rate(events, threshold=0.5)
 
     def test_invalid_threshold_raises(self) -> None:
         events = [_event("e1", required=[], taken=["tool.x"])]
-        with pytest.raises(ValueError, match="threshold must be in"):
+        with pytest.raises(ValueError, match="out of range"):
             tool_call_unauthorized_action_rate(events, threshold=-0.1)
-        with pytest.raises(ValueError, match="threshold must be in"):
+        with pytest.raises(ValueError, match="out of range"):
             tool_call_unauthorized_action_rate(events, threshold=1.1)
 
     def test_result_is_frozen_dataclass(self) -> None:
