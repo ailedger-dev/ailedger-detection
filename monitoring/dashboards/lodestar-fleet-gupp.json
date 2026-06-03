@@ -1,0 +1,394 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "GUPP adherence across the Lodestar fleet: engine churn (workers in flight vs idle), convoy throughput, stuck/hung agents, and Dolt data-plane health. Propulsion made visible.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "tags": [],
+      "targetBlank": false,
+      "title": "AILedger — LARP",
+      "tooltip": "Decision-event warrant / integrity adherence",
+      "type": "link",
+      "url": "/d/ailedger-larp"
+    }
+  ],
+  "tags": ["lodestar", "gupp", "fleet", "monitoring"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "datasource": { "type": "mysql", "uid": "dolt-beads" },
+        "definition": "SELECT DISTINCT SUBSTRING_INDEX(assignee,'/',1) AS r FROM issues WHERE assignee IS NOT NULL AND assignee <> '' ORDER BY r",
+        "includeAll": true,
+        "label": "Ship / rig",
+        "multi": true,
+        "name": "rig",
+        "options": [],
+        "query": "SELECT DISTINCT SUBSTRING_INDEX(assignee,'/',1) AS r FROM issues WHERE assignee IS NOT NULL AND assignee <> '' ORDER BY r",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": { "text": "2", "value": "2" },
+        "name": "stuck_hours",
+        "label": "Stuck threshold (h)",
+        "query": "1,2,4,8,24",
+        "options": [
+          { "text": "1", "value": "1", "selected": false },
+          { "text": "2", "value": "2", "selected": true },
+          { "text": "4", "value": "4", "selected": false },
+          { "text": "8", "value": "8", "selected": false },
+          { "text": "24", "value": "24", "selected": false }
+        ],
+        "type": "custom"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "utc",
+  "title": "Lodestar Fleet — GUPP Adherence",
+  "uid": "lodestar-fleet-gupp",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Engine churn (GUPP propulsion)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Active workers",
+      "description": "Distinct agents with work in flight (status hooked or in_progress). The fleet's drive shafts that are currently turning.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(DISTINCT assignee) AS active_workers FROM issues WHERE status IN ('in_progress','hooked') AND assignee IS NOT NULL AND assignee <> '' AND SUBSTRING_INDEX(assignee,'/',1) IN ($rig)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Work in flight",
+      "description": "Beads currently hooked or in_progress.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS in_flight FROM issues WHERE status IN ('in_progress','hooked') AND (assignee IS NULL OR SUBSTRING_INDEX(assignee,'/',1) IN ($rig))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Ready backlog",
+      "description": "Open beads waiting for a worker. A growing backlog with few active workers = the engine is starved (GUPP failure: work not getting propelled).",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 5, "w": 5, "x": 10, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 200 } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS backlog FROM issues WHERE status = 'open' AND (assignee IS NULL OR SUBSTRING_INDEX(assignee,'/',1) IN ($rig))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Stuck agents",
+      "description": "Beads hooked/in_progress with no update for more than $stuck_hours hours — a polecat that took work but stopped propelling it (stalled or zombie). Any value > 0 fires the 'GUPP: stuck agents' alert.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 5, "w": 5, "x": 15, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS stuck FROM issues WHERE status IN ('in_progress','hooked') AND updated_at < (NOW() - INTERVAL $stuck_hours HOUR) AND (assignee IS NULL OR SUBSTRING_INDEX(assignee,'/',1) IN ($rig))"
+        }
+      ]
+    },
+    {
+      "type": "piechart",
+      "title": "Work by status",
+      "description": "Distribution of beads across the work lifecycle.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "right", "showLegend": false }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true } },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT status, COUNT(*) AS n FROM issues WHERE (assignee IS NULL OR SUBSTRING_INDEX(assignee,'/',1) IN ($rig)) GROUP BY status"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Bead throughput (closes/hour)",
+      "description": "Beads closed per hour — the fleet's actual output. Sustained zero while backlog is non-empty means the engine has stalled.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1 }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroup(created_at, '1h') AS time, COUNT(*) AS closes FROM events WHERE event_type = 'closed' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Work created vs closed (per hour)",
+      "description": "Inflow (created) against outflow (closed). When created persistently outruns closed, the backlog grows and propulsion is losing ground.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": true }, "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "created" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] },
+          { "matcher": { "id": "byName", "options": "closed" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } } ] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroup(created_at, '1h') AS time, SUM(CASE WHEN event_type = 'created' THEN 1 ELSE 0 END) AS created, SUM(CASE WHEN event_type = 'closed' THEN 1 ELSE 0 END) AS closed FROM events WHERE event_type IN ('created','closed') AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Convoy throughput",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Open convoys",
+      "description": "Convoy beads not yet closed — work-units in progress across the fleet.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 15 },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS open_convoys FROM issues WHERE issue_type = 'convoy' AND status <> 'closed' AND (assignee IS NULL OR SUBSTRING_INDEX(assignee,'/',1) IN ($rig))"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Convoys completed per day",
+      "description": "Convoy beads reaching closed, by day. The fleet's macro throughput.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 15 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 70, "lineWidth": 1 }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroup(closed_at, '1d') AS time, COUNT(*) AS convoys_completed FROM issues WHERE issue_type = 'convoy' AND status = 'closed' AND closed_at IS NOT NULL AND $__timeFilter(closed_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Active convoys",
+      "description": "Open convoy beads with age. Long-lived convoys may indicate a wedged work-unit.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 23 },
+      "fieldConfig": { "defaults": { "custom": { "align": "left" } }, "overrides": [] },
+      "options": { "showHeader": true, "sortBy": [ { "displayName": "age_h", "desc": true } ] },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT id, title, status, COALESCE(assignee,'(unassigned)') AS assignee, TIMESTAMPDIFF(HOUR, created_at, NOW()) AS age_h FROM issues WHERE issue_type = 'convoy' AND status <> 'closed' AND (assignee IS NULL OR SUBSTRING_INDEX(assignee,'/',1) IN ($rig)) ORDER BY created_at ASC LIMIT 200"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Stuck / hung agents",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Stuck / hung agents",
+      "description": "Beads hooked or in_progress with no update for more than $stuck_hours hours. These are stalled or zombie polecats — propulsion has stopped on assigned work.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "age_h" }, "properties": [ { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "gradient" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "yellow", "value": null }, { "color": "red", "value": 8 } ] } } ] }
+        ]
+      },
+      "options": { "showHeader": true, "sortBy": [ { "displayName": "age_h", "desc": true } ] },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT id, COALESCE(assignee,'(unassigned)') AS assignee, status, title, TIMESTAMPDIFF(HOUR, updated_at, NOW()) AS age_h FROM issues WHERE status IN ('in_progress','hooked') AND updated_at < (NOW() - INTERVAL $stuck_hours HOUR) AND (assignee IS NULL OR SUBSTRING_INDEX(assignee,'/',1) IN ($rig)) ORDER BY updated_at ASC LIMIT 200"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Dolt data-plane health",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Dolt commits (24h)",
+      "description": "Commits to the Dolt store in the last 24h (every bead/mail write is a Dolt commit). Healthy fleets churn continuously; a sudden drop to zero is the classic silent-Dolt-death signal.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 41 },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS commits_24h FROM dolt_log WHERE date >= (NOW() - INTERVAL 24 HOUR)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Minutes since last Dolt commit",
+      "description": "Age of the most recent Dolt commit. A long gap while agents are active means the data plane has wedged.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 41 },
+      "fieldConfig": { "defaults": { "unit": "m", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 45 }, { "color": "red", "value": 90 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT TIMESTAMPDIFF(MINUTE, m, NOW()) AS mins_since_commit FROM (SELECT MAX(date) AS m FROM dolt_log) t"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Dolt commit rate (per hour)",
+      "description": "Dolt commit volume over time — the data plane's pulse.",
+      "datasource": { "type": "mysql", "uid": "dolt-beads" },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 41 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "spanNulls": true }, "unit": "short", "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "mysql", "uid": "dolt-beads" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroup(date, '1h') AS time, COUNT(*) AS commits FROM dolt_log WHERE $__timeFilter(date) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Fleet event feed (events.jsonl)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
+      "collapsed": true,
+      "panels": [
+        {
+          "type": "table",
+          "title": "Recent fleet events (slings / dones / mail)",
+          "description": "Tail of the town event stream from events.jsonl via the Infinity datasource. Requires the Infinity plugin with NDJSON parsing; if unavailable this panel shows no data while the rest of the dashboard is unaffected.",
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "streams" },
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 47 },
+          "fieldConfig": { "defaults": { "custom": { "align": "left" } }, "overrides": [] },
+          "options": { "showHeader": true, "sortBy": [ { "displayName": "ts", "desc": true } ] },
+          "targets": [
+            {
+              "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "streams" },
+              "refId": "A",
+              "type": "json",
+              "source": "url",
+              "parser": "backend",
+              "format": "table",
+              "url": "file:///streams/events.jsonl",
+              "url_options": { "method": "GET", "data": "" },
+              "root_selector": "",
+              "columns": [
+                { "selector": "ts", "text": "ts", "type": "timestamp" },
+                { "selector": "type", "text": "type", "type": "string" },
+                { "selector": "actor", "text": "actor", "type": "string" },
+                { "selector": "payload.target", "text": "target", "type": "string" },
+                { "selector": "payload.formula", "text": "formula", "type": "string" },
+                { "selector": "payload.subject", "text": "subject", "type": "string" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

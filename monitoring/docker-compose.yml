@@ -1,0 +1,38 @@
+# Portable Grafana stack for AILedger LARP + Lodestar GUPP adherence monitoring.
+#
+# Per-ship deploy:
+#   cp .env.example .env && edit
+#   ./setup-datasources.sh        # renders datasources.yaml from .env
+#   docker compose up -d
+#   open http://localhost:${GRAFANA_PORT}
+#
+# Config-as-code: dashboards, datasources, and alert rules are all provisioned
+# from this directory on container start (docs/caird/grafana-monitoring-plan.md:
+# "No hand-clicked dashboards that vanish on container rebuild").
+services:
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: ailedger-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      GF_INSTALL_PLUGINS: "${GRAFANA_PLUGINS:-yesoreyeram-infinity-datasource}"
+      # Allow Infinity to read the mounted JSONL files.
+      GF_PLUGINS_ALLOW_LOCAL_MODE: "true"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: "30s"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./dashboards:/var/lib/grafana/dashboards:ro
+      # Event streams for the Infinity-backed fleet feed panel (read-only).
+      - "${EVENTS_JSONL_HOST_PATH:-../../.events.jsonl}:/streams/events.jsonl:ro"
+      - "${CHURN_LOG_HOST_PATH:-../../churn-log.jsonl}:/streams/churn-log.jsonl:ro"
+    # Needed so DOLT_HOST=host.docker.internal resolves to the ship host on Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  grafana-storage:

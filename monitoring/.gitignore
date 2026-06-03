@@ -1,0 +1,3 @@
+# Rendered by setup-datasources.sh — may contain credentials.
+grafana/provisioning/datasources/datasources.yaml
+.env

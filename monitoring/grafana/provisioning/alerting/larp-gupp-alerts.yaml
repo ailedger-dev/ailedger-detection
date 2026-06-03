@@ -1,0 +1,181 @@
+# Grafana unified-alerting provisioning — LARP + GUPP adherence alarms.
+#
+# These encode the bead's "un-warranted decisions = alarms" requirement as
+# real alert rules (the dashboard stat panels make the same conditions visible
+# with red thresholds; these rules add notification on top).
+#
+# Contact points / notification policies are environment-specific and are NOT
+# provisioned here — wire them in grafana/provisioning/alerting/contactpoints.yaml
+# or via the UI, then point the default policy at your channel (ntfy/email/Slack
+# per docs/caird/grafana-monitoring-plan.md alerting tiers). Until then these
+# rules evaluate and show state in Alerting > Alert rules without paging.
+#
+# Each rule: A = source query, B = reduce(last), C = threshold(B > 0).
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: larp-adherence
+    folder: AILedger / Lodestar
+    interval: 5m
+    rules:
+      - uid: larp-unwarranted-decisions
+        title: "AILedger LARP: un-warranted decisions"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          domain: larp
+        annotations:
+          summary: "Un-warranted Decision Events in the last 24h. Every decision-event must carry a warrant (2-cell)."
+          runbook: "Open the AILedger — LARP dashboard, 'Recent un-warranted decisions' table."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 86400, to: 0 }
+            datasourceUid: ailedger-pg
+            model:
+              refId: A
+              datasource: { type: postgres, uid: ailedger-pg }
+              format: table
+              rawSql: "SELECT COUNT(*) AS value FROM ledger.decision_events WHERE \"timestamp\" >= NOW() - INTERVAL '24 hours' AND NOT (output ?| array['warrant','rationale','reason','alternatives'])"
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              datasource: { type: __expr__, uid: __expr__ }
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      - uid: larp-broken-chain
+        title: "AILedger LARP: broken Logbook integrity chain"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          domain: larp
+        annotations:
+          summary: "One or more tenant Decision Event chains failed verify_decision_event_chain(). The Logbook integrity proof is broken."
+          runbook: "Open the AILedger — LARP dashboard, 'Per-tenant chain verification' table for the broken position."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: ailedger-pg
+            model:
+              refId: A
+              datasource: { type: postgres, uid: ailedger-pg }
+              format: table
+              rawSql: "SELECT COUNT(*) AS value FROM (SELECT DISTINCT tenant_id FROM ledger.decision_events) t, LATERAL ledger.verify_decision_event_chain(t.tenant_id) v WHERE NOT v.ok"
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              datasource: { type: __expr__, uid: __expr__ }
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+  - orgId: 1
+    name: gupp-adherence
+    folder: AILedger / Lodestar
+    interval: 5m
+    rules:
+      - uid: gupp-stuck-agents
+        title: "GUPP: stuck agents"
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          domain: gupp
+        annotations:
+          summary: "Beads hooked/in_progress with no update for >2h — stalled or zombie polecats. Propulsion has stopped on assigned work."
+          runbook: "Open the Lodestar Fleet — GUPP dashboard, 'Stuck / hung agents' table."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: dolt-beads
+            model:
+              refId: A
+              datasource: { type: mysql, uid: dolt-beads }
+              format: table
+              rawSql: "SELECT COUNT(*) AS value FROM issues WHERE status IN ('in_progress','hooked') AND updated_at < (NOW() - INTERVAL 2 HOUR)"
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              datasource: { type: __expr__, uid: __expr__ }
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      - uid: gupp-dolt-silent
+        title: "GUPP: Dolt data-plane silent"
+        condition: C
+        for: 0m
+        noDataState: Alerting
+        execErrState: Alerting
+        labels:
+          severity: critical
+          domain: gupp
+        annotations:
+          summary: "No Dolt commits in the last 90 minutes while the fleet should be active — classic silent-Dolt-death signal."
+          runbook: "gt dolt status. Do NOT restart Dolt manually; escalate per docs/dolt-health-guide.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: dolt-beads
+            model:
+              refId: A
+              datasource: { type: mysql, uid: dolt-beads }
+              format: table
+              rawSql: "SELECT COUNT(*) AS value FROM dolt_log WHERE date >= (NOW() - INTERVAL 90 MINUTE)"
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              datasource: { type: __expr__, uid: __expr__ }
+              conditions:
+                - evaluator: { type: lt, params: [1] }

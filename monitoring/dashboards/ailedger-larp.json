@@ -1,0 +1,331 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "LARP adherence over AILedger Decision Events: are decisions warranted, is the Logbook integrity-chain unbroken, what is the Truthsayer wave-off rate. The dashboard is itself a LARP artifact — it makes adherence VISIBLE.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "tags": [],
+      "targetBlank": false,
+      "title": "Lodestar fleet — GUPP",
+      "tooltip": "Fleet propulsion / GUPP adherence",
+      "type": "link",
+      "url": "/d/lodestar-fleet-gupp"
+    }
+  ],
+  "tags": ["ailedger", "larp", "compliance"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "local", "value": "local" },
+        "name": "ship",
+        "label": "Ship",
+        "query": "local",
+        "type": "constant",
+        "hide": 2
+      },
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+        "definition": "SELECT DISTINCT tenant_id::text FROM ledger.decision_events ORDER BY 1",
+        "includeAll": true,
+        "label": "Tenant",
+        "multi": true,
+        "name": "tenant",
+        "options": [],
+        "query": "SELECT DISTINCT tenant_id::text FROM ledger.decision_events ORDER BY 1",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-7d", "to": "now" },
+  "timezone": "utc",
+  "title": "AILedger — LARP Adherence",
+  "uid": "ailedger-larp",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Are decisions warranted?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Warrant coverage",
+      "description": "Share of Decision Events carrying a warrant (output contains a warrant/rationale/reason/alternatives key). LARP: every decision-event should have a 2-cell warrant. Below 100% means un-warranted decisions exist.",
+      "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 95 },
+              { "color": "green", "value": 100 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 100.0 * COUNT(*) FILTER (WHERE output ?| array['warrant','rationale','reason','alternatives']) / NULLIF(COUNT(*), 0) AS warrant_coverage FROM ledger.decision_events WHERE $__timeFilter(\"timestamp\") AND tenant_id::text IN ($tenant)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Un-warranted decisions",
+      "description": "Count of Decision Events with NO warrant in the window. Any value > 0 is a LARP violation and fires the 'AILedger LARP: un-warranted decisions' alert.",
+      "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS unwarranted FROM ledger.decision_events WHERE $__timeFilter(\"timestamp\") AND tenant_id::text IN ($tenant) AND NOT (output ?| array['warrant','rationale','reason','alternatives'])"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Truthsayer wave-off rate",
+      "description": "Share of Decision Events carrying a wave-off flag (flags_raised.flag_type matches 'wave' or 'refus'). The Truthsayer waves off decisions whose warrant does not hold. A rising rate means more decisions are failing the warrant check.",
+      "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 100.0 * COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(flags_raised) f WHERE f->>'flag_type' ILIKE '%wave%' OR f->>'flag_type' ILIKE '%refus%')) / NULLIF(COUNT(*), 0) AS waveoff_rate FROM ledger.decision_events WHERE $__timeFilter(\"timestamp\") AND tenant_id::text IN ($tenant)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Integrity chain",
+      "description": "Number of tenant chains that fail ledger.verify_decision_event_chain(). 0 = every Logbook integrity-chain intact. Any break is a critical alarm.",
+      "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "INTACT", "color": "green" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE NOT v.ok) AS broken_chains FROM (SELECT DISTINCT tenant_id FROM ledger.decision_events WHERE tenant_id::text IN ($tenant)) t, LATERAL ledger.verify_decision_event_chain(t.tenant_id) v"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Decision-event volume vs un-warranted",
+      "description": "Warranted (green) and un-warranted (red) Decision Events per hour. Un-warranted bars should stay flat at zero.",
+      "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "stacking": { "mode": "normal", "group": "A" },
+            "lineWidth": 1
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "un-warranted" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } } ] },
+          { "matcher": { "id": "byName", "options": "warranted" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } } ] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroup(\"timestamp\", '1h') AS time, COUNT(*) FILTER (WHERE output ?| array['warrant','rationale','reason','alternatives']) AS warranted, COUNT(*) FILTER (WHERE NOT (output ?| array['warrant','rationale','reason','alternatives'])) AS \"un-warranted\" FROM ledger.decision_events WHERE $__timeFilter(\"timestamp\") AND tenant_id::text IN ($tenant) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Truthsayer wave-off rate over time",
+      "description": "Hourly wave-off rate (%). Spikes mean the Truthsayer is rejecting more decisions for un-sound warrants.",
+      "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "spanNulls": true },
+          "unit": "percent",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroup(\"timestamp\", '1h') AS time, 100.0 * COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(flags_raised) f WHERE f->>'flag_type' ILIKE '%wave%' OR f->>'flag_type' ILIKE '%refus%')) / NULLIF(COUNT(*), 0) AS waveoff_rate FROM ledger.decision_events WHERE $__timeFilter(\"timestamp\") AND tenant_id::text IN ($tenant) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Logbook integrity chain",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Per-tenant chain verification",
+      "description": "Runs ledger.verify_decision_event_chain() for each tenant. ok=false rows show the position of the first broken link. This is the Logbook integrity proof, made visible.",
+      "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left" } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "ok" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "mappings", "value": [
+                { "type": "value", "options": { "true": { "text": "INTACT", "color": "green" }, "false": { "text": "BROKEN", "color": "red" } } }
+              ] }
+            ]
+          }
+        ]
+      },
+      "options": { "showHeader": true, "sortBy": [ { "displayName": "ok", "desc": false } ] },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT t.tenant_id::text AS tenant, v.ok, v.broken_at_position, v.total_rows FROM (SELECT DISTINCT tenant_id FROM ledger.decision_events WHERE tenant_id::text IN ($tenant)) t, LATERAL ledger.verify_decision_event_chain(t.tenant_id) v ORDER BY v.ok ASC, t.tenant_id"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Recent un-warranted decisions",
+      "description": "Decision Events with no warrant — the LARP violations to investigate. Empty table = full adherence.",
+      "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "custom": { "align": "left" } }, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "ailedger-pg" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT \"timestamp\" AS time, tenant_id::text AS tenant, decision_type, model_version, human_in_loop FROM ledger.decision_events WHERE $__timeFilter(\"timestamp\") AND tenant_id::text IN ($tenant) AND NOT (output ?| array['warrant','rationale','reason','alternatives']) ORDER BY \"timestamp\" DESC LIMIT 200"
+        }
+      ]
+    }
+  ]
+}

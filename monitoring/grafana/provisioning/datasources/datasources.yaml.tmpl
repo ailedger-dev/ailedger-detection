@@ -1,0 +1,56 @@
+# Grafana datasource provisioning — TEMPLATE.
+#
+# Do not edit datasources.yaml by hand; it is generated. Run:
+#   ./setup-datasources.sh
+# which substitutes ${VARS} from .env into this template and writes
+# datasources.yaml alongside it. Keep this template in git; datasources.yaml
+# is git-ignored because it may contain rendered credentials.
+#
+# Three datasources back the two dashboards:
+#   - ailedger-pg   PostgreSQL   AILedger Decision Events  (LARP panels)
+#   - dolt-beads    MySQL        Dolt/beads on :3307       (GUPP panels)
+#   - streams       Infinity     events.jsonl + churn-log  (GUPP + dolt health)
+apiVersion: 1
+
+datasources:
+  - name: ailedger-pg
+    uid: ailedger-pg
+    type: postgres
+    access: proxy
+    url: ${AILEDGER_PG_HOST}:${AILEDGER_PG_PORT}
+    user: ${AILEDGER_PG_USER}
+    database: ${AILEDGER_PG_DATABASE}
+    isDefault: true
+    jsonData:
+      sslmode: ${AILEDGER_PG_SSLMODE}
+      postgresVersion: 1500
+      timescaledb: false
+    secureJsonData:
+      password: ${AILEDGER_PG_PASSWORD}
+    editable: false
+
+  - name: dolt-beads
+    uid: dolt-beads
+    type: mysql
+    access: proxy
+    url: ${DOLT_HOST}:${DOLT_PORT}
+    user: ${DOLT_USER}
+    database: ${DOLT_DATABASE}
+    jsonData:
+      maxOpenConns: 4
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    secureJsonData:
+      password: ${DOLT_PASSWORD}
+    editable: false
+
+  - name: streams
+    uid: streams
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    jsonData:
+      # Allow reading the JSONL files mounted at /streams inside the container.
+      allowedHosts:
+        - file:///streams
+      global_queries: []
+    editable: false
