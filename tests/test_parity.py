@@ -79,19 +79,30 @@ class TestStatisticalParityDifference:
 
     def test_invalid_threshold_raises(self) -> None:
         events = [_event("A", True), _event("B", False)]
-        with pytest.raises(ValueError, match="threshold must be in"):
+        with pytest.raises(ValueError, match="out of range"):
             statistical_parity_difference(
                 events,
                 protected_class_key="race",
                 positive_outcome_predicate=_hire_predicate,
                 threshold=-0.1,
             )
-        with pytest.raises(ValueError, match="threshold must be in"):
+        with pytest.raises(ValueError, match="out of range"):
             statistical_parity_difference(
                 events,
                 protected_class_key="race",
                 positive_outcome_predicate=_hire_predicate,
                 threshold=1.5,
+            )
+
+    def test_threshold_above_baseline_is_refused(self) -> None:
+        # A threshold > 0.10 loosens detection; refused structurally.
+        events = [_event("A", True), _event("B", False)]
+        with pytest.raises(ValueError, match="LOOSENS"):
+            statistical_parity_difference(
+                events,
+                protected_class_key="race",
+                positive_outcome_predicate=_hire_predicate,
+                threshold=0.2,
             )
 
     def test_complements_disparate_impact_when_low_rate_near_zero(self) -> None:
