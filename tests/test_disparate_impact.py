@@ -103,14 +103,15 @@ class TestDisparateImpactRatio:
 
     def test_invalid_threshold_raises(self) -> None:
         events = [_event("A", True), _event("B", False)]
-        with pytest.raises(ValueError, match="threshold must be in"):
+        # 0 is in range but loosens detection below the four-fifths baseline.
+        with pytest.raises(ValueError, match="LOOSENS"):
             disparate_impact_ratio(
                 events,
                 protected_class_key="race",
                 positive_outcome_predicate=_hire_predicate,
                 threshold=0,
             )
-        with pytest.raises(ValueError, match="threshold must be in"):
+        with pytest.raises(ValueError, match="out of range"):
             disparate_impact_ratio(
                 events,
                 protected_class_key="race",
