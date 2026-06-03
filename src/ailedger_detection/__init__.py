@@ -25,9 +25,6 @@ The Detection layer is intentionally Apache 2.0 + open-source so customers,
 regulators, and adversarial reviewers can audit exactly what is being checked.
 Detection thresholds are anchored to standards (four-fifths rule = 0.8 per
 EEOC Uniform Guidelines); customers tighten, never loosen, per Charter v1.1.
-
-Authority: gt-lab/docs/param-canonicalization-spec-v1.md +
-gt-lab/docs/compliance-architecture/ARCHITECTURE-detection-taxonomy.md.
 """
 
 from ailedger_detection.confidence import confidence_stratified_outcome_analysis

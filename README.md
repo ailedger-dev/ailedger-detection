@@ -59,7 +59,7 @@ Total: 27 tests. Run with `pytest`.
 
 ## Why these specific primitives
 
-Per `gt-lab/docs/compliance-architecture/ARCHITECTURE-detection-taxonomy.md` and the strategic pivot validation, the v0.1.0 set covers the three failure modes most likely to surface in adversarial review:
+The v0.1.0 set covers the three failure modes most likely to surface in adversarial review:
 
 1. **Disparate impact** is the load-bearing primitive for Federal Rule 707 admissibility in employment + credit + insurance discrimination cases. The four-fifths rule is the standard a plaintiff's expert will run.
 2. **Statistical parity** is the complementary view favored by EU AI Act Article 26 (deployer obligations) and academic fairness literature.
@@ -111,8 +111,6 @@ A consumer call site that passes a looser threshold receives a `ValueError`. The
 ## Spec linkage
 
 - Detection Event schema: `proxy/migrations/20260512_decision_events_schema.sql`
-- Param canonicalization spec: `gt-lab/docs/param-canonicalization-spec-v1.md`
-- Detection taxonomy: `gt-lab/docs/compliance-architecture/ARCHITECTURE-detection-taxonomy.md`
 - Charter: [ailedger-dev/charter/CHARTER.md](https://github.com/ailedger-dev/charter/blob/main/CHARTER.md)
 
 ## Testing
@@ -129,15 +127,6 @@ pytest
 - Not the integrity layer. The hash chain lives in `proxy/migrations/`; this package does not verify chain integrity, only statistics over the events.
 - Not the only package. The producer-side SDK is at `sdk/` (`@ailedger/sdk` v0.1.0 TypeScript).
 
-## Repo posture (separate repo planned)
+## Repo posture
 
-Per AILedger posture v2 (`gt-lab/memory/project_ailedger_posture_v2_2026_05_12.md`), the Detection layer ships as a SEPARATE public repo from day one. v0.1.0 lives in the ailedger monorepo for development convenience; extraction to `github.com/jakejjoyner/ailedger-detection` (or canonical equivalent) is bead `hq-77p` work and gates the public-differentiation claim.
-
-The Apache 2.0 license is unchanged when the package extracts to its own repo. Issue tracking and contributions migrate at extraction time.
-
-## Authority
-
-- Spec: `gt-lab/docs/param-canonicalization-spec-v1.md`
-- Posture: `gt-lab/memory/project_ailedger_posture_v2_2026_05_12.md`
-- Charter: [ailedger-dev/charter/CHARTER.md](https://github.com/ailedger-dev/charter/blob/main/CHARTER.md)
-- Competitive matrix: `gt-lab/docs/ailedger-competitive-matrix-v2.md`
+The Detection layer ships as a standalone public repository under Apache 2.0, separate from the AILedger integrity and producer-side layers. Issue tracking and contributions happen in this repository.
