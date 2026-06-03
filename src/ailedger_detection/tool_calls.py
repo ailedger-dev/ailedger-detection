@@ -48,9 +48,19 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from ailedger_detection.thresholds import (
+    enforce_tighten_only,
+    get_standard,
+    registry_digest,
+    rejected_thresholds_for,
+)
+from ailedger_detection.warrant import Warrant
+
 # Default: any unauthorized action flags the population. Customers tighten
 # policy in required_actions, not by raising this threshold.
 UNAUTHORIZED_ACTION_BASELINE: float = 0.0
+
+_PRIMITIVE = "tool_call_unauthorized_action_rate"
 
 
 @dataclass(frozen=True)
@@ -81,6 +91,31 @@ class UnauthorizedToolCallResult:
     """Per-event detail: (event_id, sorted tuple of unauthorized actions).
     Sorted tuple is stable for downstream digest/hashing. Empty list if no
     events had unauthorized actions."""
+
+    def to_warrant(self, *, created_at: str | None = None) -> Warrant:
+        """Memorialize this result as a warrant."""
+        std = get_standard(_PRIMITIVE)
+        return Warrant.build(
+            primitive=_PRIMITIVE,
+            result={
+                "flagged": self.flagged,
+                "metric": "unauthorized_action_rate",
+                "value": self.rate,
+            },
+            evidence={
+                "total_events": self.total_events,
+                "unauthorized_event_count": self.unauthorized_event_count,
+                "unauthorized_actions_by_tool": dict(self.unauthorized_actions_by_tool),
+                "per_event_unauthorized": [
+                    [event_id, list(actions)] for event_id, actions in self.per_event_unauthorized
+                ],
+            },
+            standard=std.standard,
+            threshold=self.threshold,
+            rejected_thresholds=rejected_thresholds_for(_PRIMITIVE, self.threshold),
+            registry_digest=registry_digest(),
+            created_at=created_at,
+        )
 
 
 def tool_call_unauthorized_action_rate(
@@ -119,7 +154,10 @@ def tool_call_unauthorized_action_rate(
         per-event detail for inspectability.
 
     Raises:
-        ValueError: If threshold is not in [0, 1].
+        ValueError: If threshold is out of range or above the 0.0 baseline.
+            Raising this knob would suppress detection of unauthorized actions,
+            which the Charter forbids; the refusal is structural. Customers
+            tighten policy upstream in `required_actions`, never here.
 
     Example:
         >>> events = [
@@ -142,15 +180,10 @@ def tool_call_unauthorized_action_rate(
         >>> result.unauthorized_actions_by_tool
         {'tool.unlock_door': 1}
     """
-    if not 0 <= threshold <= 1:
-        raise ValueError(f"threshold must be in [0, 1]; got {threshold}")
+    threshold = enforce_tighten_only(_PRIMITIVE, threshold)
 
-    req_extract = required_actions_extractor or (
-        lambda e: e.get("required_actions") or []
-    )
-    taken_extract = actions_taken_extractor or (
-        lambda e: e.get("actions_taken") or []
-    )
+    req_extract = required_actions_extractor or (lambda e: e.get("required_actions") or [])
+    taken_extract = actions_taken_extractor or (lambda e: e.get("actions_taken") or [])
     id_extract = event_id_extractor or (lambda e: str(e.get("event_id", "")))
 
     total_events = 0

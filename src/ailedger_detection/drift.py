@@ -24,9 +24,19 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from ailedger_detection.thresholds import (
+    enforce_tighten_only,
+    get_standard,
+    registry_digest,
+    rejected_thresholds_for,
+)
+from ailedger_detection.warrant import Warrant
+
 # FDIC SR 11-7 / OCC 2011-12 PSI threshold ladder.
 PSI_NO_DRIFT_THRESHOLD: float = 0.10
 PSI_ACTION_THRESHOLD: float = 0.25
+
+_PRIMITIVE = "model_drift_between_versions"
 
 # Small smoothing constant for zero-bucket cases (prevents log(0) = -inf).
 PSI_SMOOTHING_EPSILON: float = 1e-6
@@ -57,6 +67,38 @@ class ModelDriftResult:
     no_drift_threshold: float
     action_threshold: float
 
+    def to_warrant(self, *, created_at: str | None = None) -> Warrant:
+        """Memorialize this result as a warrant.
+
+        The drift ladder has two anchored thresholds; the action threshold is
+        the flag boundary, so it is the warrant's headline threshold. The
+        rejected set covers loosening the action threshold past the FDIC/OCC
+        baseline.
+        """
+        std = get_standard("model_drift.action")
+        return Warrant.build(
+            primitive=_PRIMITIVE,
+            result={
+                "flagged": self.flagged,
+                "metric": "psi",
+                "value": self.psi,
+                "severity": self.severity,
+            },
+            evidence={
+                "reference_count": self.reference_count,
+                "current_count": self.current_count,
+                "bucket_contributions": dict(self.bucket_contributions),
+                "no_drift_threshold": self.no_drift_threshold,
+            },
+            standard=std.standard,
+            threshold=self.action_threshold,
+            rejected_thresholds=rejected_thresholds_for(
+                "model_drift.action", self.action_threshold
+            ),
+            registry_digest=registry_digest(),
+            created_at=created_at,
+        )
+
 
 def model_drift_between_versions(
     reference_events: Iterable[dict[str, Any]],
@@ -85,12 +127,16 @@ def model_drift_between_versions(
     Raises:
         ValueError: If either cohort is empty.
         ValueError: If thresholds are invalid (not 0 < no_drift < action).
+        ValueError: If either threshold LOOSENS detection above its FDIC/OCC
+            baseline. Per Charter v1.1 customers tighten (lower), never loosen.
     """
     if not (0 < no_drift_threshold < action_threshold):
         raise ValueError(
             f"Thresholds must satisfy 0 < no_drift ({no_drift_threshold}) "
             f"< action ({action_threshold})"
         )
+    no_drift_threshold = enforce_tighten_only("model_drift.no_drift", no_drift_threshold)
+    action_threshold = enforce_tighten_only("model_drift.action", action_threshold)
 
     extractor = bucket_extractor or (lambda e: str(e.get("decision_type", "unknown")))
 
