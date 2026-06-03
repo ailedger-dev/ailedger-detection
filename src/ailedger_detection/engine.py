@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from ailedger_detection.thresholds import registry_digest, verify_registry_integrity
 from ailedger_detection.warrant import Warrant
 
 
@@ -117,7 +118,22 @@ class DetectionRun:
     warrants: tuple[Warrant, ...]
     created_at: str
     run_digest: str
-    """SHA-256 over the ordered warrant digests — chains the run into the ledger."""
+    """SHA-256 over (prev_digest, registry_digest, ordered warrant digests) —
+    chains the run into the ledger. Passing the previous run's `run_digest` as
+    `prev_digest` links run N to run N-1, so the run sequence is an append-only
+    chain (not just per-run-internal). Like `warrant_digest`, this is a
+    consistency digest; cross-run tamper-evidence is the DB hash-chain's job."""
+
+    registry_digest: str
+    """Content digest of the threshold registry this run executed against,
+    recorded so a loosened registry is visible in the audit record (F1)."""
+
+    registry_intact: bool
+    """True iff `registry_digest` matched the sealed canonical baselines at run
+    time. False means the tighten-only registry was altered — a loud audit flag."""
+
+    prev_digest: str | None = None
+    """The prior run's `run_digest`, if this run was chained onto one."""
 
     @property
     def flagged(self) -> bool:
@@ -131,6 +147,9 @@ class DetectionRun:
         return {
             "created_at": self.created_at,
             "run_digest": self.run_digest,
+            "prev_digest": self.prev_digest,
+            "registry_digest": self.registry_digest,
+            "registry_intact": self.registry_intact,
             "flagged": self.flagged,
             "warrants": [w.to_dict() for w in self.warrants],
         }
@@ -161,8 +180,16 @@ class DetectionEngine:
         return DetectionEngine((*self._specs, spec))
 
     @staticmethod
-    def _run_digest(warrants: tuple[Warrant, ...]) -> str:
-        payload = json.dumps([w.warrant_digest for w in warrants], separators=(",", ":"))
+    def _run_digest(warrants: tuple[Warrant, ...], prev_digest: str | None, reg_digest: str) -> str:
+        payload = json.dumps(
+            {
+                "prev": prev_digest,
+                "registry": reg_digest,
+                "warrants": [w.warrant_digest for w in warrants],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def run(
@@ -170,6 +197,7 @@ class DetectionEngine:
         events: Iterable[dict[str, Any]],
         *,
         created_at: str | None = None,
+        prev_digest: str | None = None,
     ) -> DetectionRun:
         """
         Run every registered spec over `events` and return a warranted run.
@@ -180,17 +208,25 @@ class DetectionEngine:
             created_at: RFC3339 UTC timestamp stamped on every warrant and the
                 run. Defaults to now(UTC); pass explicitly for deterministic
                 replay/tests.
+            prev_digest: The prior run's `run_digest`, to chain run N onto run
+                N-1. Folded into this run's digest so the run sequence forms an
+                append-only chain, not just a per-run-internal hash.
 
         Returns:
-            A DetectionRun bundling one warrant per spec plus a chaining digest.
+            A DetectionRun bundling one warrant per spec plus a chaining digest
+            and the threshold-registry integrity record for this run.
         """
         if created_at is None:
             created_at = datetime.now(timezone.utc).isoformat()
 
         cohort = list(events)
         warrants = tuple(spec.evaluate(cohort, created_at=created_at) for spec in self._specs)
+        reg_digest = registry_digest()
         return DetectionRun(
             warrants=warrants,
             created_at=created_at,
-            run_digest=self._run_digest(warrants),
+            run_digest=self._run_digest(warrants, prev_digest, reg_digest),
+            registry_digest=reg_digest,
+            registry_intact=verify_registry_integrity(),
+            prev_digest=prev_digest,
         )

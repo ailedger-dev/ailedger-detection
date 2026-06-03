@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ailedger_detection.warrant import RejectedThreshold, Warrant
 
 _TS = "2026-06-03T00:00:00+00:00"
@@ -64,3 +66,72 @@ class TestWarrant:
         w = _warrant(created_at=None)
         # RFC3339-ish, non-empty.
         assert "T" in w.created_at and w.created_at.endswith("+00:00")
+
+
+class TestWarrantSoundness:
+    """F3 — an empty-standard / empty-rejected 2-cell must be unrepresentable."""
+
+    def test_empty_standard_refused(self) -> None:
+        with pytest.raises(ValueError, match="non-empty `standard`"):
+            _warrant(standard="")
+
+    def test_empty_rejected_and_no_sentinel_refused(self) -> None:
+        with pytest.raises(ValueError, match="rejected"):
+            _warrant(rejected_thresholds=())
+
+    def test_no_looser_alternative_sentinel_accepted(self) -> None:
+        # An explicit, recorded sentinel stands in for the rejected set when the
+        # chosen value is already the strictest representable.
+        w = _warrant(rejected_thresholds=(), no_looser_alternative=True)
+        assert w.no_looser_alternative is True
+        assert w.verify_digest() is True
+        assert w.to_dict()["no_looser_alternative"] is True
+
+
+class TestFailClosed:
+    """F5 — a missing decision cell must not fail open (read as not-flagged)."""
+
+    def test_build_requires_flagged_cell(self) -> None:
+        with pytest.raises(ValueError, match="flagged"):
+            _warrant(result={"metric": "m", "value": 0.5})
+
+    def test_flagged_property_defaults_closed(self) -> None:
+        # Defence-in-depth: a warrant somehow lacking the cell reads as flagged.
+        w = _warrant()
+        bare = Warrant(
+            primitive=w.primitive,
+            result={},  # no 'flagged'
+            evidence=w.evidence,
+            standard=w.standard,
+            threshold=w.threshold,
+            rejected_thresholds=w.rejected_thresholds,
+            warrant_digest=w.warrant_digest,
+            created_at=w.created_at,
+        )
+        assert bare.flagged is True
+
+
+class TestKeyedSignature:
+    """F4 — tamper-evidence is the keyed signature's job, not the unkeyed digest."""
+
+    def test_unsigned_warrant_has_no_signature(self) -> None:
+        w = _warrant()
+        assert w.signature is None
+        assert w.verify_signature(b"any-key") is False
+
+    def test_signed_warrant_verifies_with_key(self) -> None:
+        w = _warrant(signing_key=b"s3cret")
+        assert w.signature is not None
+        assert w.verify_signature(b"s3cret") is True
+
+    def test_signature_rejects_wrong_key(self) -> None:
+        w = _warrant(signing_key=b"s3cret")
+        assert w.verify_signature(b"wrong") is False
+
+    def test_signature_binds_content(self) -> None:
+        # Recomputing the public digest over altered content passes verify_digest
+        # (consistency) but a forger without the key cannot produce a matching
+        # signature for the altered payload.
+        a = _warrant(signing_key=b"s3cret")
+        b = _warrant(result={"flagged": False}, signing_key=b"s3cret")
+        assert a.signature != b.signature

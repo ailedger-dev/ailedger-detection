@@ -48,6 +48,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from ailedger_detection._coverage import callable_identity
 from ailedger_detection.thresholds import (
     enforce_tighten_only,
     get_standard,
@@ -91,6 +92,14 @@ class UnauthorizedToolCallResult:
     Sorted tuple is stable for downstream digest/hashing. Empty list if no
     events had unauthorized actions."""
 
+    policy_extractor_id: str
+    """Module-qualified identity of the required-actions (policy) extractor — the
+    real loosening surface for this primitive. Recorded so an auditor sees *which*
+    policy definition produced the unauthorized set (F2)."""
+
+    actions_extractor_id: str
+    """Module-qualified identity of the actions-taken extractor (F2)."""
+
     def to_warrant(self, *, created_at: str | None = None) -> Warrant:
         """Memorialize this result as a LARP warrant (1-cell + 2-cell)."""
         std = get_standard(_PRIMITIVE)
@@ -105,6 +114,8 @@ class UnauthorizedToolCallResult:
                 "total_events": self.total_events,
                 "unauthorized_event_count": self.unauthorized_event_count,
                 "unauthorized_actions_by_tool": dict(self.unauthorized_actions_by_tool),
+                "policy_extractor_id": self.policy_extractor_id,
+                "actions_extractor_id": self.actions_extractor_id,
                 "per_event_unauthorized": [
                     [event_id, list(actions)] for event_id, actions in self.per_event_unauthorized
                 ],
@@ -215,4 +226,6 @@ def tool_call_unauthorized_action_rate(
         unauthorized_event_count=unauthorized_event_count,
         unauthorized_actions_by_tool=unauthorized_by_tool,
         per_event_unauthorized=per_event_unauthorized,
+        policy_extractor_id=callable_identity(req_extract),
+        actions_extractor_id=callable_identity(taken_extract),
     )

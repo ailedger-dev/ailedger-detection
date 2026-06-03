@@ -49,11 +49,20 @@ Compliance gaps:
 **LARP warrant spine.** Every primitive result exposes `.to_warrant()`, producing
 a `Warrant` that memorializes the run: the result is a **1-cell** (the decision),
 and the evidence + the **rejected thresholds** are the **2-cell** ("chose this
-threshold rather than a looser one, because <standard>"). Each warrant carries a
-content digest (`warrant_digest`) over its substantive cells — deterministic
-across wall-clock time, so a verifier can re-run a detection and confirm the
-warrant's content. This is the auditable spine the Interchange (fleet federation)
-and the Grafana LARP monitor consume. See [LARP warrant](#larp-warrant) below.
+threshold rather than a looser one, because <standard>"). Soundness is enforced at
+build time — a warrant with an empty `standard`, no rejected alternative (and no
+explicit `no_looser_alternative` sentinel), or a missing `flagged` cell is
+**refused**, so a bare flag cannot be dressed as a justification and a malformed
+result cannot fail open.
+
+Each warrant carries a content digest (`warrant_digest`) over its substantive
+cells — deterministic across wall-clock time, so a verifier can re-run a detection
+and confirm the warrant's content. **The digest is a *consistency* check, not
+keyed tamper-evidence:** anyone can recompute a public unkeyed hash over altered
+content. Tamper-evidence is delivered by the append-only DB hash-chain or, for
+standalone use, an optional HMAC `signature` (`build(..., signing_key=...)` /
+`verify_signature(key)`). This is the auditable spine the Interchange (fleet
+federation) and the Grafana LARP monitor consume. See [LARP warrant](#larp-warrant) below.
 
 **Detection engine.** `DetectionEngine` runs a configured set of primitives over a
 cohort and returns a digest-chained `DetectionRun` bundling one warrant per
@@ -74,14 +83,39 @@ TypedDict is structural, so existing callers passing untyped `dict` continue to 
 
 ## Anti-theater enforcement (structural, not policy)
 
-The Charter v1.1 anti-theater commitments are enforced by the *type*, not by
-configuration a customer can override:
+The Charter v1.1 anti-theater commitments are enforced by the *type and the
+structure*, not by configuration a customer can override — and not merely by the
+one parameter that barely matters (the numeric threshold). "Structural" is a claim
+this package has to *earn*; here is precisely where each guarantee is enforced and
+where its boundary lies.
 
-- **Tighten-only thresholds.** `thresholds.py` is the single source of truth for
-  every threshold's baseline, anchoring standard, and tighten direction. A call
-  site that passes a *looser* threshold receives a `ValueError` — e.g.
-  `disparate_impact_ratio(..., threshold=0.7)` is refused because 0.7 loosens
-  detection below the EEOC four-fifths baseline of 0.8.
+- **Tighten-only thresholds, on an immutable registry.** `thresholds.py` is the
+  single source of truth for every threshold's baseline, standard, and tighten
+  direction. A call site that passes a *looser* threshold receives a `ValueError`
+  — `disparate_impact_ratio(..., threshold=0.7)` is refused because 0.7 loosens
+  detection below the EEOC four-fifths baseline of 0.8. The registry is a
+  **read-only `MappingProxyType` of frozen entries**, so the baseline cannot be
+  loosened by a one-line monkeypatch; and `enforce_tighten_only` validates against
+  a **sealed canonical snapshot**, so even reaching past the mapping's type cannot
+  weaken the check — it is refused as an integrity violation instead. Every
+  `DetectionRun` records the live `registry_digest` and a `registry_intact` flag,
+  so any drift from canonical is visible in the audit record. A baseline reached by
+  float arithmetic (`0.1 + 0.7`) is accepted, not spuriously refused.
+- **The caller-supplied loosening surface is audited, not trusted blindly.** The
+  parameters that actually decide what gets detected — the `protected_class_key`,
+  the `positive_outcome_predicate`, the policy extractors — are domain-necessary
+  caller input, but they are no longer an *invisible* loosening surface. Events a
+  caller's class-key drops are **counted** (`skipped_no_label`) and surfaced in the
+  warrant, never silently `continue`d past; label `coverage` is reported and a
+  `low_coverage` warning raised below an 80% floor; and the predicate / class-key /
+  policy-extractor **identity is recorded in the warrant** (by module-qualified
+  name) so an auditor sees *what definition* produced the number. Silence is made
+  auditable.
+- **No small-sample false-positive theater.** The four-fifths and parity primitives
+  only flag over groups meeting a sealed minimum sample size — a trivially small
+  cohort is recorded `evaluable=False`, not `flagged`, so a single A/B pair can no
+  longer manufacture an "adverse impact" alarm. The floor is sealed (not a caller
+  knob), because *raising* a sample floor is itself a loosening surface.
 - **No disablement surface.** `DetectionEngine` / `DetectionSpec` have no
   `enabled` flag, no `compliance_mode`, no per-customer "skip" knob. Any
   suppression-flavored config key (`disable`, `compliance_mode`, `bypass`,
@@ -89,18 +123,27 @@ configuration a customer can override:
   to reduce scope is to omit a primitive — and that absence is recorded in the
   run (the set of warrants is the record of exactly what was checked).
 
+**Integrity boundary (stated honestly).** The `warrant_digest` and `run_digest`
+are *consistency* digests, not keyed tamper-evidence against a motivated adversary
+— see the warrant-spine note above. Cross-run tamper-evidence is the append-only DB
+hash-chain's job; standalone forgery-resistance is the optional HMAC `signature`.
+Two watch-items remain documented rather than closed: the suppression-key check is
+a denylist (the real guarantee is the no-config-surface design, not the list), and
+an empty engine / omitted primitive is only auditable against an expected-coverage
+manifest the package does not yet ship.
+
 ## Test coverage
 
-v0.3.0 ships **111 tests** across the primitives, the warrant spine, the threshold
+v0.3.0 ships **136 tests** across the primitives, the warrant spine, the threshold
 registry, the engine, and the query interface:
 
-- `tests/test_disparate_impact.py`, `tests/test_parity.py`, `tests/test_drift.py`, `tests/test_tool_calls.py` — the four bias/drift/agent primitives (baselines, borderlines, custom-tighter thresholds, anti-theater refusal of loosening, single-group / empty-cohort edge cases, inspectable stats).
-- `tests/test_confidence.py` — confidence-stratified disparate impact (per-stratum flagging, non-evaluable strata, `min_group_size`, boundary validation, warrant).
+- `tests/test_disparate_impact.py`, `tests/test_parity.py`, `tests/test_drift.py`, `tests/test_tool_calls.py` — the four bias/drift/agent primitives (baselines, borderlines, custom-tighter thresholds, anti-theater refusal of loosening, single-group / empty-cohort edge cases, inspectable stats, small-sample `evaluable=False` gating, and counted/recorded dropped-label coverage).
+- `tests/test_confidence.py` — confidence-stratified disparate impact (per-stratum flagging, non-evaluable strata, `min_group_size` default > 1, boundary validation, warrant).
 - `tests/test_unresolved_flags.py` — unresolved-flag accumulation (required-minus-taken gap, denominator excludes unflagged events, per-group breakdown, warrant).
 - `tests/test_repeated_decisions.py` — subject pattern-of-practice (threshold, favorable decisions excluded, ranking, tighten/refuse, warrant).
-- `tests/test_warrant.py` — digest determinism across timestamps, tamper detection, serialization.
-- `tests/test_thresholds.py` — tighten-only enforcement in both directions, rejected-threshold construction.
-- `tests/test_engine.py` — suppression-key refusal, one-warrant-per-spec, deterministic run digest, shared cohort, JSON round-trip.
+- `tests/test_warrant.py` — digest *consistency* determinism, soundness refusal (empty standard / empty rejected / missing `flagged`), fail-closed `flagged`, HMAC signature verify, serialization.
+- `tests/test_thresholds.py` — tighten-only enforcement in both directions, rejected-threshold construction, registry immutability + sealed-baseline integrity refusal, float-boundary acceptance.
+- `tests/test_engine.py` — suppression-key refusal, one-warrant-per-spec, deterministic run digest, run-to-run `prev_digest` chaining, recorded registry integrity, shared cohort, JSON round-trip.
 - `tests/test_query.py` — filter composition, model-version cohort split for drift, time-window bounds, reusability from a one-shot iterator.
 
 Run with `pytest`.
@@ -138,10 +181,16 @@ result = disparate_impact_ratio(
     positive_outcome_predicate=lambda e: e["output"]["decision"] == "hire",
 )
 
-print(f"Ratio: {result.ratio:.3f}")
-print(f"Flagged: {result.flagged}")
-print(f"High group: {result.high_group} ({result.high_rate:.3f})")
-print(f"Low group: {result.low_group} ({result.low_rate:.3f})")
+if not result.evaluable:
+    # Too few events per group to evaluate — recorded, not flagged (no
+    # small-sample false-positive theater). result.coverage / result.skipped_no_label
+    # still tell you how much of the cohort carried a protected-class label.
+    print(f"Not evaluable (coverage {result.coverage:.2f}, dropped {result.skipped_no_label})")
+else:
+    print(f"Ratio: {result.ratio:.3f}")
+    print(f"Flagged: {result.flagged}")
+    print(f"High group: {result.high_group} ({result.high_rate:.3f})")
+    print(f"Low group: {result.low_group} ({result.low_rate:.3f})")
 ```
 
 ## LARP warrant
@@ -158,8 +207,14 @@ print(warrant.threshold)          # 0.8
 for rt in warrant.rejected_thresholds:   # the 2-cell: what was refused, and why
     print(rt.value, "—", rt.reason)      # "< 0.8 — would loosen detection past ..."
 
-warrant.verify_digest()           # True — content matches the digest
+warrant.verify_digest()           # True — content is self-consistent (NOT keyed
+                                  #        tamper-evidence; see the integrity note)
 record = warrant.to_dict()        # JSON-friendly audit-ledger record
+
+# For standalone forgery-resistance, sign the warrant at build time with a secret:
+#   from ailedger_detection import Warrant
+#   w = Warrant.build(..., signing_key=secret)
+#   w.verify_signature(secret)    # True; False for any other key
 ```
 
 ## Detection engine

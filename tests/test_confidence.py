@@ -58,6 +58,18 @@ class TestConfidenceStratified:
         assert top.ratio is None
         assert result.flagged is False
 
+    def test_default_min_group_size_is_above_one(self) -> None:
+        # F6 — a single A/B pair in a stratum must no longer drive a flag.
+        from ailedger_detection.thresholds import MIN_EVALUABLE_GROUP_SIZE
+
+        events = [_event("A", True, 0.97), _event("B", False, 0.97)]
+        result = _analyze(events)
+        assert result.min_group_size == MIN_EVALUABLE_GROUP_SIZE
+        assert result.min_group_size > 1
+        assert result.flagged is False
+        warrant = result.to_warrant(created_at="2026-06-03T00:00:00+00:00")
+        assert warrant.evidence["min_group_size"] == MIN_EVALUABLE_GROUP_SIZE
+
     def test_skips_events_without_confidence(self) -> None:
         events = [_event("A", True, None), _event("B", False, None)]
         result = _analyze(events)

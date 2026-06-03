@@ -63,8 +63,9 @@ class TestDetectionEngine:
 
     def test_run_flagged_when_any_warrant_flags(self) -> None:
         engine = DetectionEngine([_di_spec()])
-        # B has 0 hire rate vs A 1.0 -> flagged.
-        events = [_di_event("A", True), _di_event("A", True), _di_event("B", False)]
+        # B 0/5 hire rate vs A 5/5 -> ratio 0 -> flagged (groups meet min sample).
+        events = [_di_event("A", True) for _ in range(5)]
+        events += [_di_event("B", False) for _ in range(5)]
         run = engine.run(events, created_at=_TS)
         assert run.flagged is True
         assert len(run.flagged_warrants()) == 1
@@ -128,3 +129,31 @@ class TestDetectionEngine:
         # Must round-trip through JSON (audit-ledger record).
         dumped = json.dumps(run.to_dict())
         assert "run_digest" in dumped
+        assert "registry_digest" in dumped
+
+
+class TestRunChainingAndIntegrity:
+    """F4 — runs chain N onto N-1; F1 — each run records registry integrity."""
+
+    def test_records_registry_integrity(self) -> None:
+        events = [_di_event("A", True), _di_event("B", False)]
+        run = DetectionEngine([_di_spec()]).run(events, created_at=_TS)
+        assert run.registry_intact is True
+        assert run.registry_digest  # non-empty
+
+    def test_prev_digest_chains_into_run_digest(self) -> None:
+        engine = DetectionEngine([_di_spec()])
+        events = [_di_event("A", True), _di_event("B", False)]
+        first = engine.run(events, created_at=_TS)
+        chained = engine.run(events, created_at=_TS, prev_digest=first.run_digest)
+        unchained = engine.run(events, created_at=_TS)
+        # Same content, but the chained run binds the prior digest -> different.
+        assert chained.prev_digest == first.run_digest
+        assert chained.run_digest != unchained.run_digest
+
+    def test_unchained_runs_are_deterministic(self) -> None:
+        engine = DetectionEngine([_di_spec()])
+        events = [_di_event("A", True), _di_event("B", False)]
+        a = engine.run(events, created_at=_TS)
+        b = engine.run(events, created_at="2027-01-01T00:00:00+00:00")
+        assert a.run_digest == b.run_digest

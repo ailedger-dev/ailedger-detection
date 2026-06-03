@@ -26,17 +26,14 @@ class TestStatisticalParityDifference:
         assert DEFAULT_SPD_THRESHOLD == 0.10
 
     def test_perfect_parity_yields_spd_zero(self) -> None:
-        events = [
-            _event("A", True),
-            _event("A", False),
-            _event("B", True),
-            _event("B", False),
-        ]
+        events = [_event("A", i < 3) for i in range(6)]
+        events += [_event("B", i < 3) for i in range(6)]
         result = statistical_parity_difference(
             events,
             protected_class_key="race",
             positive_outcome_predicate=_hire_predicate,
         )
+        assert result.evaluable is True
         assert result.spd == 0.0
         assert result.flagged is False
 
@@ -126,3 +123,33 @@ class TestStatisticalParityDifference:
                 protected_class_key="race",
                 positive_outcome_predicate=_hire_predicate,
             )
+
+    def test_small_sample_not_evaluable(self) -> None:
+        # F6 — one event per group must not flag a parity violation.
+        result = statistical_parity_difference(
+            [_event("A", True), _event("B", False)],
+            protected_class_key="race",
+            positive_outcome_predicate=_hire_predicate,
+        )
+        assert result.evaluable is False
+        assert result.flagged is False
+        assert result.spd is None
+
+    def test_dropped_events_counted_and_recorded(self) -> None:
+        # F2 — unlabeled rows counted, key + predicate identity in the warrant.
+        events = [_event("A", True) for _ in range(6)]
+        events += [_event("B", False) for _ in range(6)]
+        events += [{"output": {"decision": "no"}} for _ in range(2)]
+        result = statistical_parity_difference(
+            events,
+            protected_class_key="race",
+            positive_outcome_predicate=_hire_predicate,
+        )
+        assert result.skipped_no_label == 2
+        assert result.evaluable is True
+        assert result.flagged is True  # A 1.0 vs B 0.0, spd 1.0 > 0.10
+        warrant = result.to_warrant(created_at="2026-06-03T00:00:00+00:00")
+        assert warrant.evidence["skipped_no_label"] == 2
+        assert warrant.evidence["protected_class_key"] == "race"
+        assert "_hire_predicate" in warrant.evidence["predicate_id"]
+        assert warrant.verify_digest() is True

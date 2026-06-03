@@ -26,17 +26,15 @@ class TestDisparateImpactRatio:
         assert FOUR_FIFTHS_BASELINE == 0.8
 
     def test_perfect_parity_yields_ratio_one(self) -> None:
-        events = [
-            _event("A", True),
-            _event("A", False),
-            _event("B", True),
-            _event("B", False),
-        ]
+        # Equal rates across two adequately-sized groups -> ratio 1.0, no flag.
+        events = [_event("A", i < 3) for i in range(6)]
+        events += [_event("B", i < 3) for i in range(6)]
         result = disparate_impact_ratio(
             events,
             protected_class_key="race",
             positive_outcome_predicate=_hire_predicate,
         )
+        assert result.evaluable is True
         assert result.ratio == 1.0
         assert result.flagged is False
 
@@ -92,12 +90,13 @@ class TestDisparateImpactRatio:
             )
 
     def test_no_positive_outcomes_anywhere_yields_ratio_one(self) -> None:
-        events = [_event("A", False), _event("B", False)]
+        events = [_event("A", False) for _ in range(5)] + [_event("B", False) for _ in range(5)]
         result = disparate_impact_ratio(
             events,
             protected_class_key="race",
             positive_outcome_predicate=_hire_predicate,
         )
+        assert result.evaluable is True
         assert result.ratio == 1.0
         assert result.flagged is False
 
@@ -133,3 +132,66 @@ class TestDisparateImpactRatio:
             positive_outcome_predicate=_hire_predicate,
         )
         assert result.group_stats == {"A": (2, 3), "B": (0, 2)}
+
+
+class TestSmallSampleGate:
+    """F6 — four-fifths must not declare adverse impact on a handful of points."""
+
+    def test_n2_is_not_evaluable_not_flagged(self) -> None:
+        # The red-team repro: one event per group, ratio 0.0 -> previously flagged.
+        result = disparate_impact_ratio(
+            [_event("A", True), _event("B", False)],
+            protected_class_key="race",
+            positive_outcome_predicate=_hire_predicate,
+        )
+        assert result.evaluable is False
+        assert result.flagged is False
+        assert result.ratio is None
+
+    def test_a_small_disadvantaged_group_cannot_drive_a_flag(self) -> None:
+        # Two adequately-sized groups at parity + a tiny 2-event group at rate 0.
+        # The small group must not be allowed to define the ratio / raise a flag.
+        events = [_event("A", i < 4) for i in range(8)]
+        events += [_event("B", i < 4) for i in range(8)]
+        events += [_event("C", False), _event("C", False)]
+        result = disparate_impact_ratio(
+            events,
+            protected_class_key="race",
+            positive_outcome_predicate=_hire_predicate,
+        )
+        assert result.evaluable is True
+        assert result.flagged is False  # C (n=2) excluded from the ratio
+        assert "C" in result.group_stats  # but still inspectable
+
+
+class TestDroppedEventsAreCounted:
+    """F2 — events the caller's class-key drops must be counted, never silent."""
+
+    def test_stripped_labels_are_counted_and_surfaced(self) -> None:
+        # The red-team's exact gimmick: adverse rows with the label stripped.
+        events = [_event("A", True) for _ in range(6)]
+        events += [_event("B", True) for _ in range(6)]
+        events += [{"output": {"decision": "no"}} for _ in range(4)]  # no race label
+        result = disparate_impact_ratio(
+            events,
+            protected_class_key="race",
+            positive_outcome_predicate=_hire_predicate,
+        )
+        assert result.skipped_no_label == 4
+        assert result.total_events == 16
+        assert result.labeled_events == 12
+        assert result.coverage == pytest.approx(0.75)
+        assert result.low_coverage is True  # 0.75 < 0.80 floor -> loud audit warning
+        warrant = result.to_warrant(created_at="2026-06-03T00:00:00+00:00")
+        assert warrant.evidence["skipped_no_label"] == 4
+        assert warrant.evidence["protected_class_key"] == "race"
+        assert "_hire_predicate" in warrant.evidence["predicate_id"]
+        assert warrant.verify_digest() is True
+
+    def test_predicate_identity_is_address_free(self) -> None:
+        # Identity must be deterministic (no memory address) so the digest is stable.
+        events = [_event("A", True) for _ in range(5)] + [_event("B", False) for _ in range(5)]
+        a = disparate_impact_ratio(
+            events, protected_class_key="race", positive_outcome_predicate=_hire_predicate
+        )
+        assert "0x" not in a.predicate_id

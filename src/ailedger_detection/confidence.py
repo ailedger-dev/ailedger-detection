@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ailedger_detection.thresholds import (
+    MIN_EVALUABLE_GROUP_SIZE,
     enforce_tighten_only,
     get_standard,
     rejected_thresholds_for,
@@ -87,6 +88,10 @@ class ConfidenceStratifiedResult:
     skipped_no_group: int
     """Events skipped because they carried no protected-class label."""
 
+    min_group_size: int = 1
+    """The per-group sample floor applied per stratum. Recorded in the warrant so
+    a caller who raised it (suppressing strata — a loosening surface) is audited (F2)."""
+
     def to_warrant(self, *, created_at: str | None = None) -> Warrant:
         """Memorialize this result as a LARP warrant (1-cell + 2-cell)."""
         std = get_standard(_PRIMITIVE)
@@ -99,6 +104,7 @@ class ConfidenceStratifiedResult:
                 "flagged_strata": flagged_strata,
             },
             evidence={
+                "min_group_size": self.min_group_size,
                 "buckets": [
                     {
                         "label": b.label,
@@ -148,7 +154,7 @@ def confidence_stratified_outcome_analysis(
     positive_outcome_predicate: Callable[[dict[str, Any]], bool],
     bucket_boundaries: tuple[float, ...] = DEFAULT_BUCKET_BOUNDARIES,
     confidence_extractor: Callable[[dict[str, Any]], float | None] | None = None,
-    min_group_size: int = 1,
+    min_group_size: int = MIN_EVALUABLE_GROUP_SIZE,
     threshold: float | None = None,
 ) -> ConfidenceStratifiedResult:
     """
@@ -165,6 +171,11 @@ def confidence_stratified_outcome_analysis(
             to skip the event. Defaults to reading the `confidence` field.
         min_group_size: Minimum per-group event count for a stratum to evaluate
             that group. Groups below this are excluded from the stratum's ratio.
+            Defaults to the sealed MIN_EVALUABLE_GROUP_SIZE (>1) so a single A/B
+            pair in a stratum can no longer drive a four-fifths flag (F6); the
+            applied value is recorded in the warrant. Lowering it tightens
+            detection (more strata evaluate); raising it is a loosening surface
+            and is audited via the warrant.
         threshold: Four-fifths threshold. Defaults to the registry baseline
             (0.80). Tighten-only: a looser value is refused structurally.
 
@@ -264,4 +275,5 @@ def confidence_stratified_outcome_analysis(
         buckets=tuple(bucket_stats),
         skipped_no_confidence=skipped_no_confidence,
         skipped_no_group=skipped_no_group,
+        min_group_size=min_group_size,
     )
