@@ -3,7 +3,7 @@ Statistical parity difference — bias detection primitive.
 
 Statistical parity difference (SPD) measures the absolute difference in
 positive-outcome rates between two protected-class groups. Where disparate
-impact ratio is a ratio (low/high), SPD is a difference (high − low).
+impact ratio is a ratio (low/high), SPD is a difference (high - low).
 
 Per Caton & Haas 2024 survey of fairness measures, SPD complements disparate
 impact ratio by giving an absolute-difference view that does not collapse
@@ -19,8 +19,17 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from ailedger_detection.thresholds import (
+    enforce_tighten_only,
+    get_standard,
+    rejected_thresholds_for,
+)
+from ailedger_detection.warrant import Warrant
+
 # Default flag threshold for statistical parity difference. Customers tighten.
 DEFAULT_SPD_THRESHOLD: float = 0.10
+
+_PRIMITIVE = "statistical_parity_difference"
 
 
 @dataclass(frozen=True)
@@ -28,7 +37,7 @@ class StatisticalParityResult:
     """Result of a statistical-parity-difference calculation."""
 
     spd: float
-    """Statistical parity difference = high_rate − low_rate. Range [0, 1]."""
+    """Statistical parity difference = high_rate - low_rate. Range [0, 1]."""
 
     threshold: float
     """Threshold above which parity violation is flagged."""
@@ -42,6 +51,29 @@ class StatisticalParityResult:
     low_rate: float
     group_stats: dict[str, tuple[int, int]]
 
+    def to_warrant(self, *, created_at: str | None = None) -> Warrant:
+        """Memorialize this result as a warrant."""
+        std = get_standard(_PRIMITIVE)
+        return Warrant.build(
+            primitive=_PRIMITIVE,
+            result={
+                "flagged": self.flagged,
+                "metric": "statistical_parity_difference",
+                "value": self.spd,
+                "high_group": self.high_group,
+                "low_group": self.low_group,
+            },
+            evidence={
+                "high_rate": self.high_rate,
+                "low_rate": self.low_rate,
+                "group_stats": {k: list(v) for k, v in self.group_stats.items()},
+            },
+            standard=std.standard,
+            threshold=self.threshold,
+            rejected_thresholds=rejected_thresholds_for(_PRIMITIVE, self.threshold),
+            created_at=created_at,
+        )
+
 
 def statistical_parity_difference(
     events: Iterable[dict[str, Any]],
@@ -53,7 +85,7 @@ def statistical_parity_difference(
     """
     Compute statistical parity difference across protected-class groups.
 
-    SPD = max_group_rate − min_group_rate.
+    SPD = max_group_rate - min_group_rate.
 
     Args:
         events: Detection Event records.
@@ -67,10 +99,11 @@ def statistical_parity_difference(
     Raises:
         ValueError: If fewer than two groups present.
         ValueError: If any group has zero total events.
-        ValueError: If threshold is not in [0, 1].
+        ValueError: If threshold is out of range or LOOSENS detection above the
+            0.10 baseline. Per Charter v1.1 the refusal is structural: customers
+            tighten (lower toward 0), never loosen.
     """
-    if not 0 <= threshold <= 1:
-        raise ValueError(f"threshold must be in [0, 1]; got {threshold}")
+    threshold = enforce_tighten_only(_PRIMITIVE, threshold)
 
     group_stats: dict[str, list[int]] = {}
 
@@ -92,8 +125,7 @@ def statistical_parity_difference(
 
     if len(group_stats) < 2:
         raise ValueError(
-            f"At least two distinct protected-class groups required; "
-            f"found {len(group_stats)}"
+            f"At least two distinct protected-class groups required; found {len(group_stats)}"
         )
 
     rates: dict[str, float] = {}
